@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { execSync, exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 // Create a temporary directory for downloads
 const tempDir = path.join(os.tmpdir(), 'tiktok-downloads');
@@ -15,112 +16,206 @@ if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
 }
 
-// Function to download and install yt-dlp if not already installed
+// Function to ensure yt-dlp is available
 async function ensureYtDlp() {
   try {
-    const ytDlpPath = path.join('/tmp', 'yt-dlp');
+    // Path to yt-dlp in the Lambda environment
+    const ytDlpPath = path.join(process.env.LAMBDA_TASK_ROOT || '/tmp', 'yt-dlp');
     
-    // Check if yt-dlp already exists
+    // Check if yt-dlp exists
     if (!fs.existsSync(ytDlpPath)) {
-      console.log('Installing yt-dlp...');
+      console.log('yt-dlp not found, downloading...');
       
-      // Download yt-dlp binary
-      await new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(ytDlpPath);
-        https.get('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp', response => {
-          response.pipe(file);
-          file.on('finish', () => {
-            file.close();
-            // Make it executable
-            fs.chmodSync(ytDlpPath, '755');
-            resolve();
-          });
-        }).on('error', err => {
-          fs.unlink(ytDlpPath, () => {});
-          reject(err);
-        });
-      });
+      // Download yt-dlp
+      const ytDlpUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+      const response = await fetch(ytDlpUrl);
       
-      console.log('yt-dlp installed successfully');
+      if (!response.ok) {
+        throw new Error(`Failed to download yt-dlp: ${response.statusText}`);
+      }
+      
+      const buffer = await response.arrayBuffer();
+      fs.writeFileSync(ytDlpPath, Buffer.from(buffer));
+      
+      // Make yt-dlp executable
+      fs.chmodSync(ytDlpPath, '755');
+      console.log('yt-dlp downloaded and made executable');
+    } else {
+      console.log('yt-dlp already exists');
+    }
+    
+    // Verify yt-dlp is executable
+    try {
+      const { stdout } = await execAsync(`${ytDlpPath} --version`);
+      console.log(`yt-dlp version: ${stdout.trim()}`);
+    } catch (error) {
+      console.error('Error verifying yt-dlp:', error);
+      // If verification fails, try to make it executable again
+      fs.chmodSync(ytDlpPath, '755');
     }
     
     return ytDlpPath;
   } catch (error) {
-    console.error('Error installing yt-dlp:', error);
+    console.error('Error ensuring yt-dlp:', error);
     throw error;
   }
 }
 
 // Function to download TikTok video using yt-dlp
 async function downloadTikTokVideo(url, format = 'video') {
+  return new Promise(async (resolve, reject) => {
+    try {
+      console.log(`Starting download for URL: ${url}, Format: ${format}`);
+      
+      // Create a temporary directory for the download
+      const tempDir = path.join(os.tmpdir(), 'tiktok-download-' + Date.now());
+      fs.mkdirSync(tempDir, { recursive: true });
+      
+      // Determine the output format and options based on the requested format
+      let outputFormat = 'mp4';
+      let ytdlpOptions = [];
+      
+      switch (format.toLowerCase()) {
+        case 'audio':
+          outputFormat = 'mp3';
+          ytdlpOptions = ['-x', '--audio-format', 'mp3'];
+          break;
+        case 'hd':
+          ytdlpOptions = ['--format', 'best'];
+          break;
+        default: // video
+          ytdlpOptions = ['--format', 'mp4'];
+      }
+      
+      // Set the output template
+      const outputTemplate = path.join(tempDir, 'video.' + outputFormat);
+      
+      // Properly quote the URL to handle special characters
+      const quotedUrl = `"${url.replace(/"/g, '\\"')}"`;
+      
+      // Construct the yt-dlp command
+      // Note: We're using double quotes around the URL to handle special characters
+      const ytDlpPath = await ensureYtDlp();
+      
+      // Build the command with proper arguments
+      const ytdlpArgs = [
+        ...ytdlpOptions,
+        '-o', outputTemplate,
+        '--no-warnings',
+        '--no-progress',
+        '--quiet',
+        quotedUrl
+      ];
+      
+      console.log(`Running command: ${ytDlpPath} ${ytdlpArgs.join(' ')}`);
+      
+      // Execute yt-dlp as a child process
+      const ytdlpProcess = spawn(ytDlpPath, ytdlpArgs, {
+        shell: true, // Use shell to handle the quoted URL properly
+        cwd: tempDir
+      });
+      
+      let stdoutData = '';
+      let stderrData = '';
+      
+      ytdlpProcess.stdout.on('data', (data) => {
+        stdoutData += data.toString();
+        console.log(`yt-dlp stdout: ${data}`);
+      });
+      
+      ytdlpProcess.stderr.on('data', (data) => {
+        stderrData += data.toString();
+        console.error(`yt-dlp stderr: ${data}`);
+      });
+      
+      ytdlpProcess.on('close', async (code) => {
+        console.log(`yt-dlp process exited with code ${code}`);
+        
+        if (code !== 0) {
+          console.error(`yt-dlp error: ${stderrData}`);
+          
+          // Try an alternative approach if the first one fails
+          try {
+            console.log('Trying alternative download approach...');
+            
+            // Alternative approach: Use a different set of options
+            const alternativeArgs = [
+              '--format', 'best',
+              '-o', outputTemplate,
+              '--no-warnings',
+              '--no-progress',
+              '--quiet',
+              quotedUrl
+            ];
+            
+            console.log(`Running alternative command: ${ytDlpPath} ${alternativeArgs.join(' ')}`);
+            
+            const alternativeProcess = spawn(ytDlpPath, alternativeArgs, {
+              shell: true,
+              cwd: tempDir
+            });
+            
+            let altStdoutData = '';
+            let altStderrData = '';
+            
+            alternativeProcess.stdout.on('data', (data) => {
+              altStdoutData += data.toString();
+              console.log(`Alternative yt-dlp stdout: ${data}`);
+            });
+            
+            alternativeProcess.stderr.on('data', (data) => {
+              altStderrData += data.toString();
+              console.error(`Alternative yt-dlp stderr: ${data}`);
+            });
+            
+            alternativeProcess.on('close', async (altCode) => {
+              if (altCode !== 0) {
+                console.error(`Alternative download failed with code ${altCode}: ${altStderrData}`);
+                return resolve({
+                  success: false,
+                  error: `Failed to download video: ${altStderrData || stderrData}`
+                });
+              }
+              
+              // Process the downloaded file
+              processDownloadedFile(tempDir, outputTemplate, format, resolve, reject);
+            });
+          } catch (altError) {
+            console.error('Alternative download approach failed:', altError);
+            return resolve({
+              success: false,
+              error: `Failed to download video: ${altError.message}`
+            });
+          }
+        } else {
+          // Process the downloaded file
+          processDownloadedFile(tempDir, outputTemplate, format, resolve, reject);
+        }
+      });
+      
+      ytdlpProcess.on('error', (error) => {
+        console.error(`yt-dlp process error: ${error.message}`);
+        resolve({
+          success: false,
+          error: `Failed to execute yt-dlp: ${error.message}`
+        });
+      });
+      
+    } catch (error) {
+      console.error('Error in downloadTikTokVideo:', error);
+      resolve({
+        success: false,
+        error: `Failed to download video: ${error.message}`
+      });
+    }
+  });
+}
+
+// Function to process the downloaded file
+function processDownloadedFile(tempDir, outputTemplate, format, resolve, reject) {
   try {
-    console.log(`Starting download for: ${url} in format: ${format}`);
-    
-    // Generate a unique filename
-    const uniqueId = crypto.randomBytes(8).toString('hex');
-    const outputPath = path.join(tempDir, `tiktok-${uniqueId}`);
-    
-    // Ensure yt-dlp is available
-    const ytDlpPath = await ensureYtDlp();
-    
-    // Prepare yt-dlp command based on format
-    let ytDlpArgs = [
-      '--no-warnings',
-      '--no-check-certificate',
-      '--prefer-ffmpeg',
-      '--geo-bypass',
-      '--no-playlist',
-      '--quiet',
-      '--print', 'filename',
-    ];
-    
-    // Add format-specific arguments
-    if (format === 'audio') {
-      ytDlpArgs = [
-        ...ytDlpArgs,
-        '--extract-audio',
-        '--audio-format', 'mp3',
-        '--audio-quality', '0',
-        '-o', `${outputPath}.%(ext)s`,
-      ];
-    } else if (format === 'hd') {
-      ytDlpArgs = [
-        ...ytDlpArgs,
-        '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        '-o', `${outputPath}.%(ext)s`,
-      ];
-    } else {
-      // Default video format
-      ytDlpArgs = [
-        ...ytDlpArgs,
-        '--format', 'best[ext=mp4]/best',
-        '-o', `${outputPath}.%(ext)s`,
-      ];
-    }
-    
-    // Add the URL as the last argument
-    ytDlpArgs.push(url);
-    
-    console.log(`Running yt-dlp with args: ${ytDlpArgs.join(' ')}`);
-    
-    // Execute yt-dlp command
-    const command = `/tmp/yt-dlp ${ytDlpArgs.join(' ')}`;
-    const { stdout, stderr } = await execAsync(command, { maxBuffer: 10 * 1024 * 1024 });
-    
-    if (stderr) {
-      console.error(`yt-dlp stderr: ${stderr}`);
-    }
-    
-    // Get the output filename from stdout
-    const outputFilename = stdout.trim();
-    console.log(`Download completed: ${outputFilename}`);
-    
-    if (!fs.existsSync(outputFilename)) {
-      throw new Error(`Downloaded file not found: ${outputFilename}`);
-    }
-    
     // Read the file and return as base64
-    const fileBuffer = fs.readFileSync(outputFilename);
+    const fileBuffer = fs.readFileSync(outputTemplate);
     const base64Data = fileBuffer.toString('base64');
     
     // Determine content type
@@ -131,23 +226,26 @@ async function downloadTikTokVideo(url, format = 'video') {
     
     // Clean up the file
     try {
-      fs.unlinkSync(outputFilename);
+      fs.unlinkSync(outputTemplate);
     } catch (err) {
       console.error(`Error cleaning up file: ${err.message}`);
     }
     
-    return {
+    // Remove the temporary directory
+    fs.rmdirSync(tempDir, { recursive: true });
+    
+    resolve({
       success: true,
       data: base64Data,
       contentType,
-      filename: path.basename(outputFilename)
-    };
+      filename: path.basename(outputTemplate)
+    });
   } catch (error) {
-    console.error('Error downloading TikTok video:', error);
-    return {
+    console.error('Error processing downloaded file:', error);
+    resolve({
       success: false,
-      error: error.message
-    };
+      error: `Failed to process downloaded file: ${error.message}`
+    });
   }
 }
 
