@@ -7,9 +7,9 @@ import os from 'os';
 
 const execAsync = promisify(exec);
 
-// Define FFmpeg paths
-const FFMPEG_PATH = 'C:\\FFmpeg\\ffmpeg.exe';
-const FFPROBE_PATH = 'C:\\FFmpeg\\ffprobe.exe';
+// Define FFmpeg paths - use environment variables or default to common paths
+const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
+const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
 
 // Function to sanitize filenames
 function sanitizeFilename(filename: string): string {
@@ -41,8 +41,10 @@ export async function POST(request: Request) {
     // Construct the yt-dlp command based on format
     let command = `yt-dlp `;
     
-    // Add FFmpeg location
-    command += `--ffmpeg-location "${FFMPEG_PATH}" `;
+    // Add FFmpeg location if not using PATH
+    if (FFMPEG_PATH !== 'ffmpeg') {
+      command += `--ffmpeg-location "${FFMPEG_PATH}" `;
+    }
     
     if (format === 'audio') {
       command += `-x --audio-format mp3 `;
@@ -80,12 +82,13 @@ export async function POST(request: Request) {
         // Create enhanced video filename
         const enhancedFilePath = path.join(tempDir, 'enhanced_video.mp4');
         
-        // Enhance video quality using FFmpeg with full path to executable
+        // Enhance video quality using FFmpeg
         // 1. Upscale to 1080p using Lanczos algorithm (high quality)
         // 2. Apply unsharp mask for better details
         // 3. Improve colors and contrast
         // 4. Use high quality encoding settings
-        const enhanceCommand = `"${FFMPEG_PATH}" -i "${filePath}" -vf "scale=1920:1080:flags=lanczos,unsharp=3:3:1.5:3:3:0.5,eq=contrast=1.1:brightness=0.05:saturation=1.2" -c:v libx264 -crf 18 -preset medium -c:a aac -b:a 192k "${enhancedFilePath}"`;
+        const ffmpegCmd = FFMPEG_PATH === 'ffmpeg' ? 'ffmpeg' : `"${FFMPEG_PATH}"`;
+        const enhanceCommand = `${ffmpegCmd} -i "${filePath}" -vf "scale=1920:1080:flags=lanczos,unsharp=3:3:1.5:3:3:0.5,eq=contrast=1.1:brightness=0.05:saturation=1.2" -c:v libx264 -crf 18 -preset medium -c:a aac -b:a 192k "${enhancedFilePath}"`;
         
         console.log('Running enhancement command:', enhanceCommand);
         

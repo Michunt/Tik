@@ -1,6 +1,6 @@
 # TikTok Video Downloader
 
-A modern web application built with Next.js that allows users to download TikTok videos easily using yt-dlp. The application provides options to download videos with or without watermarks, and also extract audio from TikTok videos.
+A modern web application built with Next.js that allows users to download TikTok videos easily using yt-dlp. The application provides options to download videos with or without watermarks, extract audio from TikTok videos, and enhance video quality.
 
 ## Features
 
@@ -10,6 +10,7 @@ A modern web application built with Next.js that allows users to download TikTok
   - Download video with watermark
   - Download video without watermark
   - Download audio only
+  - Download enhanced HD video (no watermark)
 - Progress indication
 - Error handling
 
@@ -18,6 +19,7 @@ A modern web application built with Next.js that allows users to download TikTok
 Before running this application, make sure you have the following installed:
 - Node.js (v18 or later)
 - yt-dlp (must be installed and accessible in your system PATH)
+- FFmpeg (for video enhancement features)
 
 ### Installing yt-dlp
 
@@ -43,6 +45,28 @@ Before running this application, make sure you have the following installed:
    yt-dlp --version
    ```
 
+### Installing FFmpeg
+
+#### Windows
+1. Download FFmpeg from the [official website](https://ffmpeg.org/download.html) or use a Windows build from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)
+2. Extract the archive to a location like `C:\FFmpeg`
+3. Add the `bin` folder to your PATH environment variable or set the FFMPEG_PATH environment variable
+4. Verify installation by opening Command Prompt or PowerShell and typing:
+   ```
+   ffmpeg -version
+   ```
+
+#### macOS
+```bash
+brew install ffmpeg
+```
+
+#### Linux
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
 ## Installation
 
 1. Clone the repository:
@@ -63,6 +87,21 @@ npm run dev
 
 4. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Deployment on Netlify
+
+This application can be deployed on Netlify with the following steps:
+
+1. Fork or clone this repository to your GitHub account
+2. Log in to Netlify and click "New site from Git"
+3. Select your repository
+4. Configure the build settings:
+   - Build command: `npm run build`
+   - Publish directory: `.next`
+5. Add the following environment variables in Netlify's site settings:
+   - `FFMPEG_PATH`: Set to `ffmpeg` (Netlify has FFmpeg pre-installed)
+   - `FFPROBE_PATH`: Set to `ffprobe` (Netlify has FFprobe pre-installed)
+6. Deploy the site
+
 ## Usage
 
 1. Copy a TikTok video URL
@@ -72,6 +111,7 @@ npm run dev
    - Download Video (with watermark)
    - Download Audio Only
    - Download Without Watermark
+   - Download Enhanced HD Video (no watermark)
 
 ## How It Works
 
@@ -81,7 +121,8 @@ When you submit a TikTok URL:
 1. The application first validates the URL and retrieves video information
 2. Then it offers download options based on your preference
 3. When you select an option, it uses yt-dlp to download the video in the requested format
-4. The downloaded file is then served to your browser for download
+4. For enhanced HD videos, FFmpeg is used to improve video quality
+5. The downloaded file is then served to your browser for download
 
 ## Tech Stack
 
@@ -89,6 +130,7 @@ When you submit a TikTok URL:
 - TypeScript
 - Tailwind CSS
 - yt-dlp (for video downloading)
+- FFmpeg (for video enhancement)
 
 ## License
 
