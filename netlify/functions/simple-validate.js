@@ -1,11 +1,8 @@
-const { exec } = require('child_process');
-const { promisify } = require('util');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const https = require('https');
-
-const execAsync = promisify(exec);
+const os = require('os');
 
 // Function to download a file using Node.js https module
 function downloadFile(url, destination) {
@@ -30,6 +27,36 @@ function downloadFile(url, destination) {
       });
     }).on('error', (err) => {
       fs.unlink(destination, () => {}); // Delete the file if there was an error
+      reject(err);
+    });
+  });
+}
+
+// Function to run a command and capture its output
+function runCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const process = spawn(command, args, options);
+    
+    let stdout = '';
+    let stderr = '';
+    
+    process.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    process.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`Command failed with code ${code}: ${stderr}`));
+      }
+    });
+    
+    process.on('error', (err) => {
       reject(err);
     });
   });
@@ -86,7 +113,7 @@ exports.handler = async function(event, context) {
       
       try {
         // Use --simulate flag to just check the URL without downloading
-        const { stdout, stderr } = await execAsync(`${ytDlpPath} --simulate --dump-json "${url}"`);
+        const { stdout, stderr } = await runCommand(ytDlpPath, ['--simulate', '--dump-json', url]);
         
         if (stderr) {
           console.error('Validation stderr:', stderr);
@@ -115,7 +142,6 @@ exports.handler = async function(event, context) {
       }
     } else {
       // For now, just return a message that download is not implemented in the function
-      // We'll implement the full download functionality in a separate update
       return {
         statusCode: 200,
         body: JSON.stringify({
@@ -125,7 +151,7 @@ exports.handler = async function(event, context) {
       };
     }
   } catch (error) {
-    console.error('Error in process-tiktok function:', error);
+    console.error('Error in simple-validate function:', error);
     return {
       statusCode: 500,
       body: JSON.stringify({

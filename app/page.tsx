@@ -31,7 +31,7 @@ export default function Home() {
     
     try {
       // Validate URL using our Netlify function
-      const response = await fetch('/.netlify/functions/process-tiktok', {
+      const response = await fetch('/.netlify/functions/simple-validate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -48,7 +48,19 @@ export default function Home() {
       setVideoInfo(data);
     } catch (error: unknown) {
       console.error('Error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      let errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Make error messages more user-friendly
+      if (errorMessage.includes('command not found')) {
+        errorMessage = 'Server configuration error: Required tools are not available. Please try again later.';
+      } else if (errorMessage.includes('No such file or directory')) {
+        errorMessage = 'Server configuration error: Required files are missing. Please try again later.';
+      } else if (errorMessage.toLowerCase().includes('network') || errorMessage.toLowerCase().includes('fetch')) {
+        errorMessage = 'Network error: Please check your internet connection and try again.';
+      } else if (errorMessage.includes('tiktok')) {
+        errorMessage = 'Error processing TikTok video: Please ensure you have a valid TikTok video URL.';
+      }
+      
       setError(errorMessage);
     } finally {
       setLoading(false);
