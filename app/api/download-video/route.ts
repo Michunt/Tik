@@ -9,8 +9,8 @@ const execAsync = promisify(exec);
 
 // Define FFmpeg paths - use environment variables or default to common paths
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
-// Define FFprobe path but comment it out for now as it's not used
-// const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+// Get the yt-dlp path from environment variable or use the one in bin directory
+const YT_DLP_PATH = process.env.YT_DLP_PATH || 'yt-dlp';
 
 // Function to sanitize filenames
 function sanitizeFilename(filename: string): string {
@@ -40,7 +40,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const outputTemplate = path.join(tempDir, 'video.%(ext)s');
     
     // Construct the yt-dlp command based on format
-    let command = `yt-dlp `;
+    let command = `${YT_DLP_PATH} `;
     
     // Add FFmpeg location if not using PATH
     if (FFMPEG_PATH !== 'ffmpeg') {
@@ -56,6 +56,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
     
     command += `-o "${outputTemplate}" "${url}"`;
+    console.log('Running download command:', command);
 
     try {
       // Execute the yt-dlp command
@@ -106,7 +107,8 @@ export async function POST(request: Request): Promise<NextResponse> {
       }
       
       // Get video info to create a sanitized filename
-      const infoCommand = `yt-dlp --dump-json "${url}"`;
+      const infoCommand = `${YT_DLP_PATH} --dump-json "${url}"`;
+      console.log('Running info command:', infoCommand);
       const { stdout: infoStdout } = await execAsync(infoCommand);
       const videoInfo = JSON.parse(infoStdout);
       

@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import path from 'path';
 
 const execAsync = promisify(exec);
+
+// Get the yt-dlp path from environment variable or use the one in bin directory
+const YT_DLP_PATH = process.env.YT_DLP_PATH || 'yt-dlp';
 
 export async function POST(request: Request) {
   try {
@@ -16,7 +20,11 @@ export async function POST(request: Request) {
 
     // Use yt-dlp to get video info without downloading
     try {
-      const { stdout, stderr } = await execAsync(`yt-dlp --dump-json "${url}"`);
+      // Use the correct path to yt-dlp
+      const ytDlpCommand = `${YT_DLP_PATH} --dump-json "${url}"`;
+      console.log('Running command:', ytDlpCommand);
+      
+      const { stdout, stderr } = await execAsync(ytDlpCommand);
       
       if (stderr) {
         console.error('Validation stderr:', stderr);

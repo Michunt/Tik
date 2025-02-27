@@ -95,12 +95,27 @@ This application can be deployed on Netlify with the following steps:
 2. Log in to Netlify and click "New site from Git"
 3. Select your repository
 4. Configure the build settings:
-   - Build command: `npm run build`
+   - Build command: `npm run build` (the install-dependencies.js script will run automatically)
    - Publish directory: `.next`
-5. Add the following environment variables in Netlify's site settings:
-   - `FFMPEG_PATH`: Set to `ffmpeg` (Netlify has FFmpeg pre-installed)
-   - `FFPROBE_PATH`: Set to `ffprobe` (Netlify has FFprobe pre-installed)
+5. No need to set environment variables manually - the deployment script will handle this automatically
 6. Deploy the site
+
+### How the Netlify Deployment Works
+
+This application includes a custom deployment script (`scripts/install-dependencies.js`) that automatically:
+
+1. Installs yt-dlp during the build process
+2. Sets up the necessary environment variables
+3. Makes yt-dlp available to the application at runtime
+
+This ensures that the application works correctly on Netlify without manual configuration. The script:
+
+- Downloads the latest yt-dlp binary
+- Makes it executable
+- Creates symlinks to make it available in the PATH
+- Sets up environment variables pointing to the installed binaries
+
+If you're deploying to a different platform, you may need to adapt this script or manually install yt-dlp.
 
 ## Usage
 

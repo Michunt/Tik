@@ -1,9 +1,10 @@
 [build]
-  command = "npm run build"
+  command = "node scripts/install-dependencies.js && npm run build"
   publish = ".next"
 
 [build.environment]
   NETLIFY_NEXT_PLUGIN_SKIP = "false"
+  NODE_VERSION = "18"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
