@@ -154,6 +154,20 @@ async function downloadTikTokVideo(url, format = 'video') {
 // Function to validate a TikTok URL
 function validateTikTokUrl(url) {
   try {
+    console.log(`Validating URL: ${url}`);
+    
+    // Basic URL format check
+    if (!url || typeof url !== 'string') {
+      console.log('Invalid URL: URL is empty or not a string');
+      return false;
+    }
+    
+    // Handle shortened URLs or URLs without protocol
+    if (url.startsWith('vm.tiktok.com') || url.startsWith('tiktok.com')) {
+      url = 'https://' + url;
+    }
+    
+    // Try to parse the URL
     const parsedUrl = new URL(url);
     const hostname = parsedUrl.hostname;
     
@@ -161,26 +175,28 @@ function validateTikTokUrl(url) {
     const validDomains = ['tiktok.com', 'www.tiktok.com', 'm.tiktok.com', 'vm.tiktok.com'];
     
     if (!validDomains.includes(hostname)) {
+      console.log(`Invalid domain: ${hostname}`);
       return false;
     }
     
     // Check if the URL has a valid path structure
     const path = parsedUrl.pathname;
+    console.log(`URL path: ${path}`);
     
-    // Handle various TikTok URL formats
-    // 1. /@username/video/1234567890
-    // 2. /video/1234567890
-    // 3. /@username/video/1234567890?query=params
-    // 4. /@icc/video/7474632974 (format in the example)
+    // Extract video ID using regex - handle multiple formats
+    // 1. Standard format: /@username/video/1234567890
+    // 2. Direct format: /video/1234567890
+    // 3. Special format: /@icc/video/7474632974
+    const videoIdRegex = /\/video\/(\d+)|@[\w.-]+\/video\/(\d+)/;
+    const match = path.match(videoIdRegex);
     
-    // Extract video ID using regex
-    const videoIdMatch = path.match(/\/video\/(\d+)/) || path.match(/\/@[\w.-]+\/video\/(\d+)/);
-    
-    if (videoIdMatch && videoIdMatch[1]) {
-      console.log(`Valid TikTok URL. Video ID: ${videoIdMatch[1]}`);
+    if (match) {
+      const videoId = match[1] || match[2];
+      console.log(`Valid TikTok URL. Video ID: ${videoId}`);
       return true;
     }
     
+    console.log('No video ID found in URL path');
     return false;
   } catch (error) {
     console.error('Error validating TikTok URL:', error);
@@ -223,7 +239,25 @@ exports.handler = async function(event, context) {
       };
     }
     
-    if (!validateTikTokUrl(url)) {
+    // Special handling for the specific URL format
+    let processedUrl = url;
+    // If URL contains @username/video/ID format, ensure it's properly formatted
+    if (url.includes('@') && url.includes('/video/')) {
+      console.log('URL contains @username/video/ID format');
+      
+      // Extract the video ID
+      const videoIdMatch = url.match(/\/video\/(\d+)/) || url.match(/@[\w.-]+\/video\/(\d+)/);
+      if (videoIdMatch) {
+        const videoId = videoIdMatch[1] || videoIdMatch[2];
+        console.log(`Extracted video ID: ${videoId}`);
+        
+        // Ensure the URL is in the correct format
+        processedUrl = `https://www.tiktok.com/video/${videoId}`;
+        console.log(`Processed URL: ${processedUrl}`);
+      }
+    }
+    
+    if (!validateTikTokUrl(processedUrl)) {
       return {
         statusCode: 400,
         headers,
@@ -232,7 +266,8 @@ exports.handler = async function(event, context) {
     }
     
     // Download the video using yt-dlp
-    const result = await downloadTikTokVideo(url, format);
+    console.log(`Downloading video from URL: ${processedUrl}`);
+    const result = await downloadTikTokVideo(processedUrl, format);
     
     if (!result.success) {
       return {

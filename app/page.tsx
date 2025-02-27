@@ -23,9 +23,50 @@ export default function Home() {
     setMounted(true);
   }, []);
 
+  // Function to validate TikTok URL
+  const validateTikTokUrl = (url: string) => {
+    console.log(`Validating URL: ${url}`);
+    
+    // Basic validation
+    if (!url || url.trim() === '') {
+      setError('Please enter a TikTok URL');
+      return false;
+    }
+    
+    try {
+      // Try to parse the URL to ensure it's a valid URL format
+      new URL(url);
+      
+      // Check if it's a TikTok domain
+      const tiktokRegex = /^(https?:\/\/)?(www\.|vm\.|m\.)?tiktok\.com\//i;
+      if (!tiktokRegex.test(url)) {
+        setError('Please enter a valid TikTok URL');
+        return false;
+      }
+      
+      // Check for video path pattern
+      // This regex matches multiple TikTok URL formats:
+      // 1. https://www.tiktok.com/@username/video/1234567890
+      // 2. https://www.tiktok.com/video/1234567890
+      // 3. https://vm.tiktok.com/1234567890
+      // 4. https://www.tiktok.com/@icc/video/7474632974
+      const videoPathRegex = /(\/video\/\d+|@[\w.-]+\/video\/\d+)/i;
+      
+      if (!videoPathRegex.test(url)) {
+        setError('Please enter a valid TikTok video URL');
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('URL validation error:', error);
+      setError('Please enter a valid URL');
+      return false;
+    }
+  };
+
   const handleValidate = async () => {
-    if (!url) {
-      setError('URL parameter is required');
+    if (!validateTikTokUrl(url)) {
       return;
     }
     
@@ -34,12 +75,6 @@ export default function Home() {
     setVideoInfo(null);
     
     try {
-      // First, check if the URL is valid with a more comprehensive regex
-      // This will handle various TikTok URL formats including @icc/video/7474632974
-      if (!url.match(/https?:\/\/(www\.|vm\.)?(tiktok\.com)(\/[@\w.-]+\/video\/\d+|\/@[\w.-]+\/video\/\d+|\/.*\/video\/\d+)/i)) {
-        throw new Error('Invalid TikTok URL');
-      }
-      
       // Set basic video info
       setVideoInfo({
         success: true,
