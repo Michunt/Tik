@@ -37,10 +37,17 @@ try {
     execSync('ln -sf ../../bin/yt-dlp node_modules/.bin/yt-dlp');
     console.log('Created symlink to yt-dlp in node_modules/.bin');
     
-    // Install FFmpeg
-    console.log('Installing FFmpeg...');
-    execSync('apt-get update && apt-get install -y ffmpeg');
-    console.log('FFmpeg installed via apt-get');
+    // No need to install FFmpeg on Netlify as it's already pre-installed
+    console.log('Using pre-installed FFmpeg on Netlify');
+    
+    // Verify FFmpeg is available
+    try {
+      const ffmpegVersion = execSync('ffmpeg -version').toString().split('\n')[0];
+      console.log('FFmpeg version:', ffmpegVersion);
+    } catch (error) {
+      console.warn('Warning: Could not verify FFmpeg installation, but continuing anyway');
+      console.warn('FFmpeg error:', error.message);
+    }
   } else {
     console.log('Not running on Netlify, skipping yt-dlp installation');
     // For local development, users should install yt-dlp manually
