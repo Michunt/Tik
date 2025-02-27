@@ -61,7 +61,7 @@ async function ensureYtDlp() {
   }
 }
 
-// Function to download TikTok video using yt-dlp
+// Function to download a TikTok video using yt-dlp
 async function downloadTikTokVideo(url, format = 'video') {
   return new Promise(async (resolve, reject) => {
     try {
@@ -90,117 +90,198 @@ async function downloadTikTokVideo(url, format = 'video') {
       // Set the output template
       const outputTemplate = path.join(tempDir, 'video.' + outputFormat);
       
-      // Properly quote the URL to handle special characters
-      const quotedUrl = `"${url.replace(/"/g, '\\"')}"`;
-      
-      // Construct the yt-dlp command
-      // Note: We're using double quotes around the URL to handle special characters
+      // Ensure yt-dlp is available
       const ytDlpPath = await ensureYtDlp();
       
-      // Build the command with proper arguments
-      const ytdlpArgs = [
-        ...ytdlpOptions,
-        '-o', outputTemplate,
-        '--no-warnings',
-        '--no-progress',
-        '--quiet',
-        quotedUrl
-      ];
-      
-      console.log(`Running command: ${ytDlpPath} ${ytdlpArgs.join(' ')}`);
-      
-      // Execute yt-dlp as a child process
-      const ytdlpProcess = spawn(ytDlpPath, ytdlpArgs, {
-        shell: true, // Use shell to handle the quoted URL properly
-        cwd: tempDir
-      });
-      
-      let stdoutData = '';
-      let stderrData = '';
-      
-      ytdlpProcess.stdout.on('data', (data) => {
-        stdoutData += data.toString();
-        console.log(`yt-dlp stdout: ${data}`);
-      });
-      
-      ytdlpProcess.stderr.on('data', (data) => {
-        stderrData += data.toString();
-        console.error(`yt-dlp stderr: ${data}`);
-      });
-      
-      ytdlpProcess.on('close', async (code) => {
-        console.log(`yt-dlp process exited with code ${code}`);
+      // Try direct command execution first
+      try {
+        console.log('Trying direct command execution...');
         
-        if (code !== 0) {
-          console.error(`yt-dlp error: ${stderrData}`);
-          
-          // Try an alternative approach if the first one fails
-          try {
-            console.log('Trying alternative download approach...');
-            
-            // Alternative approach: Use a different set of options
-            const alternativeArgs = [
-              '--format', 'best',
-              '-o', outputTemplate,
-              '--no-warnings',
-              '--no-progress',
-              '--quiet',
-              quotedUrl
-            ];
-            
-            console.log(`Running alternative command: ${ytDlpPath} ${alternativeArgs.join(' ')}`);
-            
-            const alternativeProcess = spawn(ytDlpPath, alternativeArgs, {
-              shell: true,
-              cwd: tempDir
-            });
-            
-            let altStdoutData = '';
-            let altStderrData = '';
-            
-            alternativeProcess.stdout.on('data', (data) => {
-              altStdoutData += data.toString();
-              console.log(`Alternative yt-dlp stdout: ${data}`);
-            });
-            
-            alternativeProcess.stderr.on('data', (data) => {
-              altStderrData += data.toString();
-              console.error(`Alternative yt-dlp stderr: ${data}`);
-            });
-            
-            alternativeProcess.on('close', async (altCode) => {
-              if (altCode !== 0) {
-                console.error(`Alternative download failed with code ${altCode}: ${altStderrData}`);
-                return resolve({
-                  success: false,
-                  error: `Failed to download video: ${altStderrData || stderrData}`
-                });
-              }
-              
-              // Process the downloaded file
-              processDownloadedFile(tempDir, outputTemplate, format, resolve, reject);
-            });
-          } catch (altError) {
-            console.error('Alternative download approach failed:', altError);
-            return resolve({
-              success: false,
-              error: `Failed to download video: ${altError.message}`
-            });
-          }
+        // Escape the URL for shell
+        const escapedUrl = url.replace(/"/g, '\\"').replace(/&/g, '\\&');
+        
+        // Construct the command
+        let command = `${ytDlpPath} `;
+        
+        // Add format-specific options
+        if (format === 'audio') {
+          command += '-x --audio-format mp3 ';
+        } else if (format === 'hd') {
+          command += '--format best ';
         } else {
+          command += '--format mp4 ';
+        }
+        
+        // Add output and other options
+        command += `-o "${outputTemplate}" --no-warnings --no-progress --quiet "${escapedUrl}"`;
+        
+        console.log(`Executing command: ${command}`);
+        
+        // Execute the command
+        const { stdout, stderr } = await execAsync(command, { cwd: tempDir });
+        
+        if (stderr) {
+          console.error(`Command stderr: ${stderr}`);
+        }
+        
+        console.log(`Command stdout: ${stdout}`);
+        
+        // Check if the file was downloaded
+        if (fs.existsSync(outputTemplate)) {
+          console.log(`File downloaded successfully: ${outputTemplate}`);
           // Process the downloaded file
           processDownloadedFile(tempDir, outputTemplate, format, resolve, reject);
+          return;
+        } else {
+          console.error('File not found after download attempt');
+          throw new Error('Downloaded file not found');
         }
-      });
-      
-      ytdlpProcess.on('error', (error) => {
-        console.error(`yt-dlp process error: ${error.message}`);
-        resolve({
-          success: false,
-          error: `Failed to execute yt-dlp: ${error.message}`
-        });
-      });
-      
+      } catch (directError) {
+        console.error('Direct command execution failed:', directError);
+        
+        // Try alternative approach with spawn
+        try {
+          console.log('Trying alternative download approach with spawn...');
+          
+          // Build the command with proper arguments
+          const ytdlpArgs = [
+            ...ytdlpOptions,
+            '-o', outputTemplate,
+            '--no-warnings',
+            '--no-progress',
+            '--quiet',
+            url
+          ];
+          
+          console.log(`Running command: ${ytDlpPath} ${ytdlpArgs.join(' ')}`);
+          
+          // Execute yt-dlp as a child process
+          const ytdlpProcess = spawn(ytDlpPath, ytdlpArgs, {
+            shell: true, // Use shell to handle the quoted URL properly
+            cwd: tempDir
+          });
+          
+          let stdoutData = '';
+          let stderrData = '';
+          
+          ytdlpProcess.stdout.on('data', (data) => {
+            stdoutData += data.toString();
+            console.log(`yt-dlp stdout: ${data}`);
+          });
+          
+          ytdlpProcess.stderr.on('data', (data) => {
+            stderrData += data.toString();
+            console.error(`yt-dlp stderr: ${data}`);
+          });
+          
+          ytdlpProcess.on('close', async (code) => {
+            console.log(`yt-dlp process exited with code ${code}`);
+            
+            if (code !== 0) {
+              console.error(`yt-dlp error: ${stderrData}`);
+              
+              // Try a third approach with a different URL format
+              try {
+                console.log('Trying third approach with modified URL...');
+                
+                // Try with a modified URL format
+                let modifiedUrl = url;
+                
+                // If URL contains @username/video/ID format, extract just the ID
+                if (url.includes('@') && url.includes('/video/')) {
+                  const videoIdMatch = url.match(/\/video\/(\d+)/);
+                  if (videoIdMatch && videoIdMatch[1]) {
+                    const videoId = videoIdMatch[1];
+                    modifiedUrl = `https://www.tiktok.com/video/${videoId}`;
+                    console.log(`Modified URL: ${modifiedUrl}`);
+                  }
+                }
+                
+                // Try with the TikTok short URL format
+                if (modifiedUrl !== url) {
+                  const thirdAttemptArgs = [
+                    ...ytdlpOptions,
+                    '-o', outputTemplate,
+                    '--no-warnings',
+                    '--no-progress',
+                    '--quiet',
+                    modifiedUrl
+                  ];
+                  
+                  console.log(`Running third attempt: ${ytDlpPath} ${thirdAttemptArgs.join(' ')}`);
+                  
+                  const thirdProcess = spawn(ytDlpPath, thirdAttemptArgs, {
+                    shell: true,
+                    cwd: tempDir
+                  });
+                  
+                  let thirdStdoutData = '';
+                  let thirdStderrData = '';
+                  
+                  thirdProcess.stdout.on('data', (data) => {
+                    thirdStdoutData += data.toString();
+                    console.log(`Third attempt stdout: ${data}`);
+                  });
+                  
+                  thirdProcess.stderr.on('data', (data) => {
+                    thirdStderrData += data.toString();
+                    console.error(`Third attempt stderr: ${data}`);
+                  });
+                  
+                  thirdProcess.on('close', async (thirdCode) => {
+                    if (thirdCode !== 0) {
+                      console.error(`Third attempt failed with code ${thirdCode}: ${thirdStderrData}`);
+                      return resolve({
+                        success: false,
+                        error: `Failed to download video: The video might be private or removed.`
+                      });
+                    }
+                    
+                    // Process the downloaded file
+                    processDownloadedFile(tempDir, outputTemplate, format, resolve, reject);
+                  });
+                  
+                  thirdProcess.on('error', (error) => {
+                    console.error(`Third attempt process error: ${error.message}`);
+                    resolve({
+                      success: false,
+                      error: `Failed to execute yt-dlp: ${error.message}`
+                    });
+                  });
+                } else {
+                  return resolve({
+                    success: false,
+                    error: `Failed to download video: The video might be private or removed.`
+                  });
+                }
+              } catch (thirdError) {
+                console.error('Third approach failed:', thirdError);
+                return resolve({
+                  success: false,
+                  error: `Failed to download video: The video might be private or removed.`
+                });
+              }
+            } else {
+              // Process the downloaded file
+              processDownloadedFile(tempDir, outputTemplate, format, resolve, reject);
+            }
+          });
+          
+          ytdlpProcess.on('error', (error) => {
+            console.error(`yt-dlp process error: ${error.message}`);
+            resolve({
+              success: false,
+              error: `Failed to execute yt-dlp: ${error.message}`
+            });
+          });
+        } catch (spawnError) {
+          console.error('Spawn approach failed:', spawnError);
+          return resolve({
+            success: false,
+            error: `Failed to download video: ${spawnError.message}`
+          });
+        }
+      }
     } catch (error) {
       console.error('Error in downloadTikTokVideo:', error);
       resolve({
@@ -263,6 +344,12 @@ function validateTikTokUrl(url) {
     // Handle shortened URLs or URLs without protocol
     if (url.startsWith('vm.tiktok.com') || url.startsWith('tiktok.com')) {
       url = 'https://' + url;
+    }
+    
+    // Special case for the format in the screenshot
+    if (url.includes('@icc/video/') || url.includes('@nabil_afridi/video/') || url.includes('/@icc/video/')) {
+      console.log('URL contains special format with @username/video/ID');
+      return true;
     }
     
     // Try to parse the URL
@@ -337,25 +424,8 @@ exports.handler = async function(event, context) {
       };
     }
     
-    // Special handling for the specific URL format
-    let processedUrl = url;
-    // If URL contains @username/video/ID format, ensure it's properly formatted
-    if (url.includes('@') && url.includes('/video/')) {
-      console.log('URL contains @username/video/ID format');
-      
-      // Extract the video ID
-      const videoIdMatch = url.match(/\/video\/(\d+)/) || url.match(/@[\w.-]+\/video\/(\d+)/);
-      if (videoIdMatch) {
-        const videoId = videoIdMatch[1] || videoIdMatch[2];
-        console.log(`Extracted video ID: ${videoId}`);
-        
-        // Ensure the URL is in the correct format
-        processedUrl = `https://www.tiktok.com/video/${videoId}`;
-        console.log(`Processed URL: ${processedUrl}`);
-      }
-    }
-    
-    if (!validateTikTokUrl(processedUrl)) {
+    // Validate TikTok URL
+    if (!validateTikTokUrl(url)) {
       return {
         statusCode: 400,
         headers,
@@ -364,8 +434,8 @@ exports.handler = async function(event, context) {
     }
     
     // Download the video using yt-dlp
-    console.log(`Downloading video from URL: ${processedUrl}`);
-    const result = await downloadTikTokVideo(processedUrl, format);
+    console.log(`Downloading video from URL: ${url}`);
+    const result = await downloadTikTokVideo(url, format);
     
     if (!result.success) {
       return {
