@@ -166,8 +166,24 @@ function validateTikTokUrl(url) {
     
     // Check if the URL has a valid path structure
     const path = parsedUrl.pathname;
-    return path.includes('/video/') || path.match(/\/@[\w.-]+\/video\/\d+/);
+    
+    // Handle various TikTok URL formats
+    // 1. /@username/video/1234567890
+    // 2. /video/1234567890
+    // 3. /@username/video/1234567890?query=params
+    // 4. /@icc/video/7474632974 (format in the example)
+    
+    // Extract video ID using regex
+    const videoIdMatch = path.match(/\/video\/(\d+)/) || path.match(/\/@[\w.-]+\/video\/(\d+)/);
+    
+    if (videoIdMatch && videoIdMatch[1]) {
+      console.log(`Valid TikTok URL. Video ID: ${videoIdMatch[1]}`);
+      return true;
+    }
+    
+    return false;
   } catch (error) {
+    console.error('Error validating TikTok URL:', error);
     return false;
   }
 }

@@ -34,8 +34,9 @@ export default function Home() {
     setVideoInfo(null);
     
     try {
-      // First, just check if the URL is valid
-      if (!url.match(/https?:\/\/(www\.)?(tiktok\.com|vm\.tiktok\.com)\/.+/i)) {
+      // First, check if the URL is valid with a more comprehensive regex
+      // This will handle various TikTok URL formats including @icc/video/7474632974
+      if (!url.match(/https?:\/\/(www\.|vm\.)?(tiktok\.com)(\/[@\w.-]+\/video\/\d+|\/@[\w.-]+\/video\/\d+|\/.*\/video\/\d+)/i)) {
         throw new Error('Invalid TikTok URL');
       }
       
