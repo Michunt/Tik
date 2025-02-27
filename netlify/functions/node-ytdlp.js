@@ -106,76 +106,195 @@ function extractTikTokId(url) {
 
 // Function to get TikTok video download URL using a third-party service
 async function getTikTokDownloadUrl(url, format = 'video') {
-  // Try multiple API services
-  try {
-    // Try using ssstik.io API (popular TikTok downloader)
-    const formData = `id=${encodeURIComponent(url)}&locale=en&tt=azW54a`;
-    
-    const options = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Origin': 'https://ssstik.io',
-        'Referer': 'https://ssstik.io/en'
+  // Try multiple API services in sequence
+  const services = [
+    // Service 1: Direct TikTok API approach
+    async () => {
+      console.log('Trying direct TikTok API approach...');
+      const videoId = extractTikTokId(url);
+      if (!videoId) {
+        throw new Error('Could not extract video ID from TikTok URL');
       }
-    };
-    
-    return new Promise((resolve, reject) => {
-      const req = https.request('https://ssstik.io/abc?url=dl', options, (res) => {
-        let data = '';
-        
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        
-        res.on('end', () => {
-          try {
-            // Parse the response to extract the download URL
-            let downloadUrl;
-            
-            if (format === 'audio') {
-              const match = data.match(/href="(.*?)" class="pure-button pure-button-primary is-center u-bl dl-button download_link without_watermark_audio"/);
-              downloadUrl = match && match[1];
-            } else if (format === 'no-watermark') {
-              const match = data.match(/href="(.*?)" class="pure-button pure-button-primary is-center u-bl dl-button download_link without_watermark"/);
-              downloadUrl = match && match[1];
-            } else {
-              const match = data.match(/href="(.*?)" class="pure-button pure-button-primary is-center u-bl dl-button download_link with_watermark"/);
-              downloadUrl = match && match[1];
-            }
-            
-            if (downloadUrl) {
-              resolve(downloadUrl);
-            } else {
-              reject(new Error('Could not find download URL in response'));
-            }
-          } catch (error) {
-            reject(new Error(`Failed to parse API response: ${error.message}`));
+      
+      // Make a direct request to TikTok's API
+      const tiktokApiUrl = `https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id=${videoId}`;
+      const options = {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      };
+      
+      const response = await makeRequest(tiktokApiUrl, options);
+      
+      if (response.statusCode !== 200) {
+        throw new Error(`TikTok API request failed: ${response.statusCode}`);
+      }
+      
+      try {
+        const data = JSON.parse(response.body);
+        if (data.aweme_list && data.aweme_list.length > 0) {
+          const videoData = data.aweme_list[0];
+          
+          if (format === 'audio') {
+            return videoData.music.play_url.url_list[0];
+          } else if (format === 'no-watermark') {
+            return videoData.video.play_addr.url_list[0];
+          } else {
+            return videoData.video.download_addr.url_list[0];
           }
-        });
-      });
-      
-      req.on('error', (error) => {
-        reject(new Error(`API request failed: ${error.message}`));
-      });
-      
-      req.write(formData);
-      req.end();
-    });
-  } catch (error) {
-    console.error('Primary API service failed:', error);
+        } else {
+          throw new Error('No video data found in TikTok API response');
+        }
+      } catch (error) {
+        throw new Error(`Failed to parse TikTok API response: ${error.message}`);
+      }
+    },
     
-    // Fallback to another service
-    try {
-      // Try using snaptik.app as fallback
+    // Service 2: TikMate API
+    async () => {
+      console.log('Trying TikMate API...');
+      const tikMateUrl = 'https://api.tikmate.app/api/lookup';
+      const formData = `url=${encodeURIComponent(url)}`;
+      
+      // Make a POST request to the TikMate API
+      const options = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Origin': 'https://tikmate.app',
+          'Referer': 'https://tikmate.app/'
+        }
+      };
+      
+      return new Promise((resolve, reject) => {
+        const req = https.request(tikMateUrl, options, (res) => {
+          let data = '';
+          
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+          
+          res.on('end', () => {
+            try {
+              const jsonData = JSON.parse(data);
+              
+              if (!jsonData.success) {
+                throw new Error('TikMate API returned an error');
+              }
+              
+              let downloadUrl;
+              if (format === 'audio') {
+                downloadUrl = `https://tikmate.app/download/${jsonData.token}/${jsonData.id}/mp3/1/`;
+              } else if (format === 'no-watermark') {
+                downloadUrl = `https://tikmate.app/download/${jsonData.token}/${jsonData.id}/mp4/1/`;
+              } else {
+                downloadUrl = `https://tikmate.app/download/${jsonData.token}/${jsonData.id}/mp4/0/`;
+              }
+              
+              resolve(downloadUrl);
+            } catch (error) {
+              reject(new Error(`Failed to parse TikMate API response: ${error.message}`));
+            }
+          });
+        });
+        
+        req.on('error', (error) => {
+          reject(new Error(`TikMate API request failed: ${error.message}`));
+        });
+        
+        req.write(formData);
+        req.end();
+      });
+    },
+    
+    // Service 3: SSSTik API with improved parsing
+    async () => {
+      console.log('Trying SSSTik API with improved parsing...');
+      const formData = `id=${encodeURIComponent(url)}&locale=en&tt=azW54a`;
+      
+      const options = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Origin': 'https://ssstik.io',
+          'Referer': 'https://ssstik.io/en'
+        }
+      };
+      
+      return new Promise((resolve, reject) => {
+        const req = https.request('https://ssstik.io/abc?url=dl', options, (res) => {
+          let data = '';
+          
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+          
+          res.on('end', () => {
+            try {
+              // More comprehensive parsing approach
+              let downloadUrl;
+              
+              // Try multiple patterns to find the download URL
+              const patterns = [
+                // Pattern for audio
+                format === 'audio' ? /href="(.*?)" class=".*?download_link without_watermark_audio.*?"/ : null,
+                // Pattern for no-watermark video
+                format === 'no-watermark' ? /href="(.*?)" class=".*?download_link without_watermark.*?"/ : null,
+                // Pattern for regular video
+                format === 'video' ? /href="(.*?)" class=".*?download_link with_watermark.*?"/ : null,
+                // Generic patterns as fallbacks
+                /href="(https:\/\/cdn[^"]+)".*?download/,
+                /href="(https:\/\/[^"]+)".*?download/,
+                /href="([^"]+)".*?download/
+              ].filter(Boolean);
+              
+              // Try each pattern until we find a match
+              for (const pattern of patterns) {
+                const match = data.match(pattern);
+                if (match && match[1]) {
+                  downloadUrl = match[1];
+                  break;
+                }
+              }
+              
+              if (downloadUrl) {
+                // Log the found URL for debugging
+                console.log('Found download URL:', downloadUrl);
+                resolve(downloadUrl);
+              } else {
+                // If no URL is found, save the HTML response for debugging
+                console.error('HTML parsing failed. Response content:', data.substring(0, 500) + '...');
+                reject(new Error('Could not find download URL in response'));
+              }
+            } catch (error) {
+              reject(new Error(`Failed to parse SSSTik API response: ${error.message}`));
+            }
+          });
+        });
+        
+        req.on('error', (error) => {
+          reject(new Error(`SSSTik API request failed: ${error.message}`));
+        });
+        
+        req.write(formData);
+        req.end();
+      });
+    },
+    
+    // Service 4: SnapTik API with improved parsing
+    async () => {
+      console.log('Trying SnapTik API with improved parsing...');
       const formData = `url=${encodeURIComponent(url)}`;
       
       const options = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Origin': 'https://snaptik.app',
+          'Referer': 'https://snaptik.app/'
         }
       };
       
@@ -189,30 +308,85 @@ async function getTikTokDownloadUrl(url, format = 'video') {
           
           res.on('end', () => {
             try {
-              // Parse the response to extract the download URL
-              const match = data.match(/href="(.*?)" class="abutton is-success is-fullwidth"/);
-              if (match && match[1]) {
-                resolve(match[1]);
+              // More comprehensive parsing approach
+              let downloadUrl;
+              
+              // Try multiple patterns to find the download URL
+              const patterns = [
+                /href="(.*?)" class="abutton is-success is-fullwidth"/,
+                /href="(https:\/\/cdn[^"]+)"/,
+                /href="(https:\/\/[^"]+)".*?download/,
+                /href="([^"]+)".*?download/
+              ];
+              
+              // Try each pattern until we find a match
+              for (const pattern of patterns) {
+                const match = data.match(pattern);
+                if (match && match[1]) {
+                  downloadUrl = match[1];
+                  break;
+                }
+              }
+              
+              if (downloadUrl) {
+                // Log the found URL for debugging
+                console.log('Found download URL:', downloadUrl);
+                resolve(downloadUrl);
               } else {
+                // If no URL is found, save the HTML response for debugging
+                console.error('HTML parsing failed. Response content:', data.substring(0, 500) + '...');
                 reject(new Error('Could not find download URL in response'));
               }
             } catch (error) {
-              reject(new Error(`Failed to parse API response: ${error.message}`));
+              reject(new Error(`Failed to parse SnapTik API response: ${error.message}`));
             }
           });
         });
         
         req.on('error', (error) => {
-          reject(new Error(`API request failed: ${error.message}`));
+          reject(new Error(`SnapTik API request failed: ${error.message}`));
         });
         
         req.write(formData);
         req.end();
       });
-    } catch (fallbackError) {
-      throw new Error(`All API services failed: ${error.message}, ${fallbackError.message}`);
+    },
+    
+    // Service 5: Direct approach using TikTok's CDN
+    async () => {
+      console.log('Trying direct TikTok CDN approach...');
+      const videoId = extractTikTokId(url);
+      if (!videoId) {
+        throw new Error('Could not extract video ID from TikTok URL');
+      }
+      
+      // This is a simplified approach that may not always work
+      // but can serve as a last resort
+      if (format === 'audio') {
+        return `https://sf16-ies-music.tiktokcdn.com/obj/ies-music-aiso/${videoId}.mp3`;
+      } else {
+        return `https://api2-16-h2.musical.ly/aweme/v1/play/?video_id=${videoId}&ratio=default&line=0`;
+      }
+    }
+  ];
+  
+  // Try each service in sequence until one succeeds
+  let lastError;
+  for (const service of services) {
+    try {
+      console.log('Attempting to get download URL...');
+      const downloadUrl = await service();
+      console.log('Successfully got download URL:', downloadUrl);
+      return downloadUrl;
+    } catch (error) {
+      console.error('Service failed:', error.message);
+      lastError = error;
+      // Continue to the next service
     }
   }
+  
+  // If all services failed, throw the last error
+  throw lastError || new Error('All download services failed');
 }
 
 // Function to validate a TikTok URL using Node.js
@@ -251,6 +425,8 @@ exports.handler = async function(event, context) {
       };
     }
     
+    console.log(`Processing request: action=${action}, format=${format}, url=${url}`);
+    
     // If action is 'validate', just get video info
     if (action === 'validate') {
       console.log('Validating URL:', url);
@@ -278,10 +454,14 @@ exports.handler = async function(event, context) {
       
       try {
         // Get the download URL for the requested format
+        console.log('Getting download URL...');
         const downloadUrl = await getTikTokDownloadUrl(url, format);
+        console.log('Download URL obtained:', downloadUrl);
         
         // Download the file
+        console.log('Downloading file from URL...');
         const { buffer, extension } = await downloadFile(downloadUrl);
+        console.log('File downloaded successfully, size:', buffer.length);
         
         // Generate a filename
         const filename = `tiktok-${format}${extension}`;
@@ -299,11 +479,25 @@ exports.handler = async function(event, context) {
         };
       } catch (error) {
         console.error('Download error:', error);
+        
+        // Try to provide a more helpful error message
+        let errorMessage = error.message;
+        let statusCode = 500;
+        
+        if (errorMessage.includes('find download URL')) {
+          errorMessage = 'Could not find a valid download URL for this TikTok video. The video might be private or removed.';
+        } else if (errorMessage.includes('API request failed')) {
+          errorMessage = 'TikTok download service is currently unavailable. Please try again later.';
+        } else if (errorMessage.includes('extract video ID')) {
+          errorMessage = 'Invalid TikTok URL format. Please provide a valid TikTok video URL.';
+          statusCode = 400;
+        }
+        
         return {
-          statusCode: 500,
+          statusCode: statusCode,
           body: JSON.stringify({
             error: 'Failed to download video',
-            details: error.message
+            details: errorMessage
           })
         };
       }
