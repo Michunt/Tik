@@ -2,18 +2,71 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const http = require('http');
 const os = require('os');
 const crypto = require('crypto');
 
-// Function to download a file from a URL
-function downloadFile(url) {
+// Function to make an HTTP request with support for redirects
+function makeRequest(url, options = {}, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
-    const protocol = url.startsWith('https:') ? require('https') : require('http');
+    if (maxRedirects === 0) {
+      reject(new Error('Too many redirects'));
+      return;
+    }
+
+    const protocol = url.startsWith('https:') ? https : http;
     
-    protocol.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (response) => {
+    // Add a default user agent if not provided
+    if (!options.headers) {
+      options.headers = {};
+    }
+    if (!options.headers['User-Agent']) {
+      options.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+    }
+    
+    protocol.get(url, options, (response) => {
       // Handle redirects
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        return downloadFile(response.headers.location)
+        console.log(`Following redirect (${response.statusCode}) to: ${response.headers.location}`);
+        // Follow the redirect - handle relative URLs
+        const redirectUrl = new URL(response.headers.location, url).href;
+        return makeRequest(redirectUrl, options, maxRedirects - 1)
+          .then(resolve)
+          .catch(reject);
+      }
+      
+      let data = '';
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      response.on('end', () => {
+        resolve({ 
+          statusCode: response.statusCode,
+          headers: response.headers,
+          body: data
+        });
+      });
+    }).on('error', reject);
+  });
+}
+
+// Function to download a file from a URL
+async function downloadFile(url) {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https:') ? https : http;
+    
+    const options = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    };
+    
+    protocol.get(url, options, (response) => {
+      // Handle redirects
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        const redirectUrl = new URL(response.headers.location, url).href;
+        return downloadFile(redirectUrl)
           .then(resolve)
           .catch(reject);
       }
@@ -53,95 +106,113 @@ function extractTikTokId(url) {
 
 // Function to get TikTok video download URL using a third-party service
 async function getTikTokDownloadUrl(url, format = 'video') {
-  // Extract the video ID from the URL
-  const videoId = extractTikTokId(url);
-  if (!videoId) {
-    throw new Error('Could not extract video ID from TikTok URL');
-  }
-  
-  // For this implementation, we'll use a simple approach to get the video
-  // In a real implementation, you might want to use a more reliable third-party service
-  
-  // Construct a direct download URL based on the format
-  // This is a simplified approach and may not work for all TikTok videos
-  let downloadUrl;
-  
-  if (format === 'no-watermark') {
-    // For no-watermark, we'll use a different approach
-    downloadUrl = `https://api.tikwm.com/video/data?url=${encodeURIComponent(url)}`;
-  } else if (format === 'audio') {
-    // For audio only
-    downloadUrl = `https://api.tikwm.com/video/data?url=${encodeURIComponent(url)}&hd=0&audio=1`;
-  } else {
-    // For regular video
-    downloadUrl = `https://api.tikwm.com/video/data?url=${encodeURIComponent(url)}&hd=1`;
-  }
-  
-  // Get the response from the API
-  return new Promise((resolve, reject) => {
-    https.get(downloadUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (response) => {
-      if (response.statusCode !== 200) {
-        reject(new Error(`API request failed: ${response.statusCode} ${response.statusMessage}`));
-        return;
+  // Try multiple API services
+  try {
+    // Try using ssstik.io API (popular TikTok downloader)
+    const formData = `id=${encodeURIComponent(url)}&locale=en&tt=azW54a`;
+    
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Origin': 'https://ssstik.io',
+        'Referer': 'https://ssstik.io/en'
       }
-      
-      let data = '';
-      response.on('data', (chunk) => {
-        data += chunk;
+    };
+    
+    return new Promise((resolve, reject) => {
+      const req = https.request('https://ssstik.io/abc?url=dl', options, (res) => {
+        let data = '';
+        
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          try {
+            // Parse the response to extract the download URL
+            let downloadUrl;
+            
+            if (format === 'audio') {
+              const match = data.match(/href="(.*?)" class="pure-button pure-button-primary is-center u-bl dl-button download_link without_watermark_audio"/);
+              downloadUrl = match && match[1];
+            } else if (format === 'no-watermark') {
+              const match = data.match(/href="(.*?)" class="pure-button pure-button-primary is-center u-bl dl-button download_link without_watermark"/);
+              downloadUrl = match && match[1];
+            } else {
+              const match = data.match(/href="(.*?)" class="pure-button pure-button-primary is-center u-bl dl-button download_link with_watermark"/);
+              downloadUrl = match && match[1];
+            }
+            
+            if (downloadUrl) {
+              resolve(downloadUrl);
+            } else {
+              reject(new Error('Could not find download URL in response'));
+            }
+          } catch (error) {
+            reject(new Error(`Failed to parse API response: ${error.message}`));
+          }
+        });
       });
       
-      response.on('end', () => {
-        try {
-          const jsonData = JSON.parse(data);
-          
-          if (jsonData.code !== 0) {
-            reject(new Error(`API error: ${jsonData.msg || 'Unknown error'}`));
-            return;
-          }
-          
-          if (format === 'audio') {
-            resolve(jsonData.data.music);
-          } else if (format === 'no-watermark') {
-            resolve(jsonData.data.play);
-          } else {
-            resolve(jsonData.data.play); // Regular video
-          }
-        } catch (error) {
-          reject(new Error(`Failed to parse API response: ${error.message}`));
+      req.on('error', (error) => {
+        reject(new Error(`API request failed: ${error.message}`));
+      });
+      
+      req.write(formData);
+      req.end();
+    });
+  } catch (error) {
+    console.error('Primary API service failed:', error);
+    
+    // Fallback to another service
+    try {
+      // Try using snaptik.app as fallback
+      const formData = `url=${encodeURIComponent(url)}`;
+      
+      const options = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
+      };
+      
+      return new Promise((resolve, reject) => {
+        const req = https.request('https://snaptik.app/abc.php', options, (res) => {
+          let data = '';
+          
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+          
+          res.on('end', () => {
+            try {
+              // Parse the response to extract the download URL
+              const match = data.match(/href="(.*?)" class="abutton is-success is-fullwidth"/);
+              if (match && match[1]) {
+                resolve(match[1]);
+              } else {
+                reject(new Error('Could not find download URL in response'));
+              }
+            } catch (error) {
+              reject(new Error(`Failed to parse API response: ${error.message}`));
+            }
+          });
+        });
+        
+        req.on('error', (error) => {
+          reject(new Error(`API request failed: ${error.message}`));
+        });
+        
+        req.write(formData);
+        req.end();
       });
-    }).on('error', reject);
-  });
-}
-
-// Function to run a command and capture its output
-function runCommand(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const process = spawn(command, args, options);
-    
-    let stdout = '';
-    let stderr = '';
-    
-    process.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    
-    process.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-    
-    process.on('close', (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(`Command failed with code ${code}: ${stderr}`));
-      }
-    });
-    
-    process.on('error', (err) => {
-      reject(err);
-    });
-  });
+    } catch (fallbackError) {
+      throw new Error(`All API services failed: ${error.message}, ${fallbackError.message}`);
+    }
+  }
 }
 
 // Function to validate a TikTok URL using Node.js
