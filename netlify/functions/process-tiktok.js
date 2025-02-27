@@ -7,15 +7,36 @@ const https = require('https');
 
 const execAsync = promisify(exec);
 
-// Function to download a file using Node.js https module
-function downloadFile(url, destination) {
+// Function to download a file using Node.js https module with redirect support
+function downloadFile(url, destination, redirectCount = 0) {
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(destination);
-    https.get(url, (response) => {
+    // Maximum number of redirects to follow
+    const MAX_REDIRECTS = 5;
+    
+    if (redirectCount > MAX_REDIRECTS) {
+      reject(new Error(`Too many redirects (${redirectCount}) when downloading ${url}`));
+      return;
+    }
+    
+    // Determine if we're using http or https
+    const protocol = url.startsWith('https:') ? require('https') : require('http');
+    
+    protocol.get(url, (response) => {
+      // Handle redirects (status codes 301, 302, 303, 307, 308)
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        console.log(`Following redirect (${response.statusCode}) to: ${response.headers.location}`);
+        // Follow the redirect
+        return downloadFile(response.headers.location, destination, redirectCount + 1)
+          .then(resolve)
+          .catch(reject);
+      }
+      
       if (response.statusCode !== 200) {
         reject(new Error(`Failed to download ${url}: ${response.statusCode} ${response.statusMessage}`));
         return;
       }
+      
+      const file = fs.createWriteStream(destination);
       
       response.pipe(file);
       
@@ -45,7 +66,8 @@ async function ensureYtDlp() {
     console.log('Installing yt-dlp...');
     
     // Download yt-dlp binary using Node.js https module
-    const ytDlpUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+    // Use a direct download URL instead of the redirect URL
+    const ytDlpUrl = 'https://github.com/yt-dlp/yt-dlp/releases/download/2023.11.16/yt-dlp';
     await downloadFile(ytDlpUrl, ytDlpPath);
     
     // Make it executable

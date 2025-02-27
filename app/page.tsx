@@ -31,7 +31,7 @@ export default function Home() {
     
     try {
       // Validate URL using our Netlify function
-      const response = await fetch('/.netlify/functions/simple-validate', {
+      const response = await fetch('/.netlify/functions/node-ytdlp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -59,6 +59,12 @@ export default function Home() {
         errorMessage = 'Network error: Please check your internet connection and try again.';
       } else if (errorMessage.includes('tiktok')) {
         errorMessage = 'Error processing TikTok video: Please ensure you have a valid TikTok video URL.';
+      } else if (errorMessage.includes('302') || errorMessage.includes('301') || errorMessage.includes('redirect')) {
+        errorMessage = 'Server error: Redirect issue. Our team has been notified and is working on a fix.';
+      } else if (errorMessage.includes('download')) {
+        errorMessage = 'Download error: Could not download required components. Please try again later.';
+      } else if (errorMessage.includes('Failed to process video')) {
+        errorMessage = 'Processing error: Could not process the TikTok video. Please try a different video.';
       }
       
       setError(errorMessage);
