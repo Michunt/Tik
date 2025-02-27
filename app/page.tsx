@@ -24,49 +24,30 @@ export default function Home() {
   }, []);
 
   const handleValidate = async () => {
-    if (!url) return;
+    if (!url) {
+      setError('URL parameter is required');
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     setVideoInfo(null);
     
     try {
-      // Validate URL using our Netlify function
-      const response = await fetch('/.netlify/functions/node-ytdlp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ url, action: 'validate' }),
-      });
-      
-      const data: VideoInfo = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.details || data.error || 'Failed to process video');
+      // First, just check if the URL is valid
+      if (!url.match(/https?:\/\/(www\.)?(tiktok\.com|vm\.tiktok\.com)\/.+/i)) {
+        throw new Error('Invalid TikTok URL');
       }
       
-      setVideoInfo(data);
+      // Set basic video info
+      setVideoInfo({
+        success: true,
+        title: 'TikTok Video',
+        duration: 30 // Placeholder
+      });
     } catch (error: unknown) {
       console.error('Error:', error);
       let errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
-      // Make error messages more user-friendly
-      if (errorMessage.includes('command not found')) {
-        errorMessage = 'Server configuration error: Required tools are not available. Please try again later.';
-      } else if (errorMessage.includes('No such file or directory')) {
-        errorMessage = 'Server configuration error: Required files are missing. Please try again later.';
-      } else if (errorMessage.toLowerCase().includes('network') || errorMessage.toLowerCase().includes('fetch')) {
-        errorMessage = 'Network error: Please check your internet connection and try again.';
-      } else if (errorMessage.includes('tiktok')) {
-        errorMessage = 'Error processing TikTok video: Please ensure you have a valid TikTok video URL.';
-      } else if (errorMessage.includes('302') || errorMessage.includes('301') || errorMessage.includes('redirect')) {
-        errorMessage = 'Server error: Redirect issue. Our team has been notified and is working on a fix.';
-      } else if (errorMessage.includes('download')) {
-        errorMessage = 'Download error: Could not download required components. Please try again later.';
-      } else if (errorMessage.includes('Failed to process video')) {
-        errorMessage = 'Processing error: Could not process the TikTok video. Please try a different video.';
-      }
-      
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -74,42 +55,59 @@ export default function Home() {
   };
 
   const handleDownload = async (format: string) => {
-    if (!url) return;
+    if (!url) {
+      setError('URL parameter is required');
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     setDownloadType(format);
     
     try {
-      // Download the video using our Netlify function
-      const response = await fetch('/.netlify/functions/node-ytdlp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ url, action: 'download', format }),
-      });
+      // Create URL with query parameters
+      const apiUrl = `/.netlify/functions/node-ytdlp?url=${encodeURIComponent(url)}&format=${format}`;
+      
+      // Download the video using our Netlify function with GET request
+      const response = await fetch(apiUrl);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.details || errorData.error || 'Failed to download video');
       }
 
-      // Get the filename from the Content-Disposition header if available
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `tiktok-${format}.${format === 'audio' ? 'mp3' : 'mp4'}`;
+      // Parse the JSON response
+      const data = await response.json();
       
-      if (contentDisposition) {
-        const matches = /filename="([^"]+)"/.exec(contentDisposition);
-        if (matches && matches[1]) {
-          filename = matches[1];
-        }
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to download video');
       }
-
-      const blob = await response.blob();
+      
+      // Create a blob from the base64 data
+      const byteCharacters = atob(data.data);
+      const byteArrays = [];
+      
+      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+        const slice = byteCharacters.slice(offset, offset + 512);
+        
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {
+          byteNumbers[i] = slice.charCodeAt(i);
+        }
+        
+        const byteArray = new Uint8Array(byteNumbers);
+        byteArrays.push(byteArray);
+      }
+      
+      // Determine content type
+      const contentType = data.contentType || (format === 'audio' ? 'audio/mp3' : 'video/mp4');
+      
+      // Create blob and download
+      const blob = new Blob(byteArrays, { type: contentType });
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = filename;
+      a.download = data.filename || `tiktok-${format}.${format === 'audio' ? 'mp3' : 'mp4'}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(downloadUrl);
@@ -211,11 +209,11 @@ export default function Home() {
                   {loading && downloadType === 'audio' ? 'Downloading...' : 'Download Audio Only'}
                 </button>
                 <button 
-                  onClick={() => handleDownload('no-watermark')}
+                  onClick={() => handleDownload('hd')}
                   disabled={loading}
                   className="w-full bg-red-500 text-white py-2 rounded-lg font-medium hover:bg-red-600 disabled:bg-gray-300"
                 >
-                  {loading && downloadType === 'no-watermark' ? 'Processing HD Video...' : 'Download Enhanced HD (No Watermark)'}
+                  {loading && downloadType === 'hd' ? 'Processing HD Video...' : 'Download Enhanced HD (No Watermark)'}
                 </button>
                 <button 
                   onClick={() => {
