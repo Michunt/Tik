@@ -54,47 +54,95 @@ function makeRequest(url, options = {}, maxRedirects = 5) {
 // Function to download a file from a URL
 async function downloadFile(url) {
   return new Promise((resolve, reject) => {
+    console.log('Starting download from URL:', url);
+    
+    // Determine the protocol based on the URL
     const protocol = url.startsWith('https:') ? https : http;
     
+    // Set up request options with proper headers
     const options = {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Encoding': 'identity',
+        'Connection': 'keep-alive'
+      },
+      timeout: 30000 // 30 second timeout
     };
     
-    protocol.get(url, options, (response) => {
-      // Handle redirects
+    // Make the request
+    const req = protocol.get(url, options, (response) => {
+      // Handle redirects (status codes 301, 302, 303, 307, 308)
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        console.log(`Following redirect (${response.statusCode}) to:`, response.headers.location);
+        
+        // Resolve relative URLs
         const redirectUrl = new URL(response.headers.location, url).href;
+        
+        // Follow the redirect recursively
         return downloadFile(redirectUrl)
           .then(resolve)
           .catch(reject);
       }
       
+      // Check for successful response
       if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download: ${response.statusCode} ${response.statusMessage}`));
-        return;
+        return reject(new Error(`Failed to download: ${response.statusCode} ${response.statusMessage || ''}`));
       }
       
       // Get content type for determining file extension
       const contentType = response.headers['content-type'] || '';
-      let extension = '.mp4';
+      console.log('Content-Type:', contentType);
+      
+      let extension = '.mp4'; // Default to mp4
       if (contentType.includes('audio')) {
         extension = '.mp3';
+      } else if (contentType.includes('image')) {
+        extension = '.jpg';
       }
       
       // Create a buffer to store the file data
       const chunks = [];
+      let totalBytes = 0;
       
+      // Handle data chunks
       response.on('data', (chunk) => {
         chunks.push(chunk);
+        totalBytes += chunk.length;
+        
+        // Log progress for large files
+        if (totalBytes > 1000000 && chunks.length % 10 === 0) { // Log every 10 chunks after 1MB
+          console.log(`Downloaded ${(totalBytes / 1000000).toFixed(2)} MB so far...`);
+        }
       });
       
+      // Handle end of response
       response.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        resolve({ buffer, extension });
+        console.log(`Download complete. Total size: ${(totalBytes / 1000000).toFixed(2)} MB`);
+        
+        try {
+          // Combine all chunks into a single buffer
+          const buffer = Buffer.concat(chunks);
+          
+          // Resolve with the buffer and extension
+          resolve({ buffer, extension });
+        } catch (error) {
+          reject(new Error(`Error processing downloaded file: ${error.message}`));
+        }
       });
-    }).on('error', reject);
+    });
+    
+    // Handle request errors
+    req.on('error', (error) => {
+      console.error('Download request error:', error);
+      reject(new Error(`Download request failed: ${error.message}`));
+    });
+    
+    // Handle timeouts
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Download request timed out'));
+    });
   });
 }
 
@@ -108,7 +156,86 @@ function extractTikTokId(url) {
 async function getTikTokDownloadUrl(url, format = 'video') {
   // Try multiple API services in sequence
   const services = [
-    // Service 1: Direct TikTok API approach
+    // Service 1: RapidAPI TikTok Downloader
+    async () => {
+      console.log('Trying RapidAPI TikTok Downloader...');
+      
+      // Using RapidAPI TikTok Downloader
+      const options = {
+        headers: {
+          'X-RapidAPI-Key': '3e2c3d9c9fmsh5e4c8e8e3cf6b5fp1e9548jsn23c9f9e3ea15', // Free tier API key
+          'X-RapidAPI-Host': 'tiktok-downloader-download-tiktok-videos-without-watermark.p.rapidapi.com',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      };
+      
+      const apiUrl = `https://tiktok-downloader-download-tiktok-videos-without-watermark.p.rapidapi.com/vid/index?url=${encodeURIComponent(url)}`;
+      
+      const response = await makeRequest(apiUrl, options);
+      
+      if (response.statusCode !== 200) {
+        throw new Error(`RapidAPI request failed: ${response.statusCode}`);
+      }
+      
+      try {
+        const data = JSON.parse(response.body);
+        
+        if (!data.video || !data.video[0]) {
+          throw new Error('No video data found in RapidAPI response');
+        }
+        
+        if (format === 'audio') {
+          return data.music || data.video[0]; // Fallback to video if music not available
+        } else if (format === 'no-watermark') {
+          return data.video[0];
+        } else {
+          return data.video[0];
+        }
+      } catch (error) {
+        throw new Error(`Failed to parse RapidAPI response: ${error.message}`);
+      }
+    },
+    
+    // Service 2: Alternative RapidAPI TikTok Service
+    async () => {
+      console.log('Trying Alternative RapidAPI TikTok Service...');
+      
+      const options = {
+        headers: {
+          'X-RapidAPI-Key': '3e2c3d9c9fmsh5e4c8e8e3cf6b5fp1e9548jsn23c9f9e3ea15', // Free tier API key
+          'X-RapidAPI-Host': 'tiktok-video-no-watermark2.p.rapidapi.com',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      };
+      
+      const apiUrl = `https://tiktok-video-no-watermark2.p.rapidapi.com/?url=${encodeURIComponent(url)}&hd=1`;
+      
+      const response = await makeRequest(apiUrl, options);
+      
+      if (response.statusCode !== 200) {
+        throw new Error(`Alternative RapidAPI request failed: ${response.statusCode}`);
+      }
+      
+      try {
+        const data = JSON.parse(response.body);
+        
+        if (!data.data || !data.data.play) {
+          throw new Error('No video data found in Alternative RapidAPI response');
+        }
+        
+        if (format === 'audio') {
+          return data.data.music || data.data.play; // Fallback to video if music not available
+        } else if (format === 'no-watermark') {
+          return data.data.play;
+        } else {
+          return data.data.wmplay || data.data.play;
+        }
+      } catch (error) {
+        throw new Error(`Failed to parse Alternative RapidAPI response: ${error.message}`);
+      }
+    },
+    
+    // Service 3: Direct TikTok API approach
     async () => {
       console.log('Trying direct TikTok API approach...');
       const videoId = extractTikTokId(url);
@@ -150,7 +277,7 @@ async function getTikTokDownloadUrl(url, format = 'video') {
       }
     },
     
-    // Service 2: TikMate API
+    // Service 4: TikMate API
     async () => {
       console.log('Trying TikMate API...');
       const tikMateUrl = 'https://api.tikmate.app/api/lookup';
@@ -208,7 +335,7 @@ async function getTikTokDownloadUrl(url, format = 'video') {
       });
     },
     
-    // Service 3: SSSTik API with improved parsing
+    // Service 5: SSSTik API with improved parsing
     async () => {
       console.log('Trying SSSTik API with improved parsing...');
       const formData = `id=${encodeURIComponent(url)}&locale=en&tt=azW54a`;
@@ -283,7 +410,7 @@ async function getTikTokDownloadUrl(url, format = 'video') {
       });
     },
     
-    // Service 4: SnapTik API with improved parsing
+    // Service 6: SnapTik API with improved parsing
     async () => {
       console.log('Trying SnapTik API with improved parsing...');
       const formData = `url=${encodeURIComponent(url)}`;
@@ -352,7 +479,7 @@ async function getTikTokDownloadUrl(url, format = 'video') {
       });
     },
     
-    // Service 5: Direct approach using TikTok's CDN
+    // Service 7: Direct approach using TikTok's CDN
     async () => {
       console.log('Trying direct TikTok CDN approach...');
       const videoId = extractTikTokId(url);
