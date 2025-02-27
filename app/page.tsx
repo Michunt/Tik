@@ -30,13 +30,13 @@ export default function Home() {
     setVideoInfo(null);
     
     try {
-      // Validate URL first
-      const response = await fetch('/api/download', {
+      // Validate URL using our Netlify function
+      const response = await fetch('/.netlify/functions/process-tiktok', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, action: 'validate' }),
       });
       
       const data: VideoInfo = await response.json();
