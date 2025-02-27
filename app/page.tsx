@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react';
 
 interface VideoInfo {
   success: boolean;
-  title: string;
-  duration: number;
-  webpage_url: string;
+  title?: string;
+  duration?: number;
+  webpage_url?: string;
+  error?: string;
+  details?: string;
 }
 
 export default function Home() {
