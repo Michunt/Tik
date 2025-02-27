@@ -9,7 +9,8 @@ const execAsync = promisify(exec);
 
 // Define FFmpeg paths - use environment variables or default to common paths
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
-const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+// Define FFprobe path but comment it out for now as it's not used
+// const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
 
 // Function to sanitize filenames
 function sanitizeFilename(filename: string): string {
@@ -20,7 +21,7 @@ function sanitizeFilename(filename: string): string {
     .trim();
 }
 
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<NextResponse> {
   const tempDir = path.join(os.tmpdir(), 'tiktok-downloads-' + Date.now());
   
   try {
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
         
         console.log('Running enhancement command:', enhanceCommand);
         
-        const { stdout: enhanceStdout, stderr: enhanceStderr } = await execAsync(enhanceCommand);
+        const { stderr: enhanceStderr } = await execAsync(enhanceCommand);
         if (enhanceStderr) console.log('Enhancement stderr:', enhanceStderr);
         
         // Check if enhanced file was created
@@ -139,7 +140,7 @@ export async function POST(request: Request) {
         },
       });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Download error:', error);
       // Clean up on error
       if (fs.existsSync(tempDir)) {
@@ -148,16 +149,17 @@ export async function POST(request: Request) {
       throw error;
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in download-video route:', error);
     // Clean up on error
     if (fs.existsSync(tempDir)) {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
       { 
         error: 'Failed to download video',
-        details: error.message
+        details: errorMessage
       },
       { status: 500 }
     );

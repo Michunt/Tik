@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import path from 'path';
-import fs from 'fs';
-import os from 'os';
 
 const execAsync = promisify(exec);
 
@@ -34,23 +31,25 @@ export async function POST(request: Request) {
         webpage_url: videoInfo.webpage_url
       });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('URL validation error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       return NextResponse.json(
         { 
           error: 'Invalid or unsupported URL',
-          details: error.message
+          details: errorMessage
         },
         { status: 400 }
       );
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in download route:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
       { 
         error: 'Failed to process video request',
-        details: error.message
+        details: errorMessage
       },
       { status: 500 }
     );

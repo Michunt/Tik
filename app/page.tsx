@@ -2,11 +2,18 @@
 
 import { useState, useEffect } from 'react';
 
+interface VideoInfo {
+  success: boolean;
+  title: string;
+  duration: number;
+  webpage_url: string;
+}
+
 export default function Home() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [downloadType, setDownloadType] = useState<string | null>(null);
-  const [videoInfo, setVideoInfo] = useState<any>(null);
+  const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -30,16 +37,17 @@ export default function Home() {
         body: JSON.stringify({ url }),
       });
       
-      const data = await response.json();
+      const data: VideoInfo = await response.json();
       
       if (!response.ok) {
         throw new Error(data.details || data.error || 'Failed to process video');
       }
       
       setVideoInfo(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error:', error);
-      setError(error.message);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -86,9 +94,10 @@ export default function Home() {
       a.click();
       window.URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(a);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error:', error);
-      setError(error.message);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setError(errorMessage);
     } finally {
       setLoading(false);
       setDownloadType(null);
