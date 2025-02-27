@@ -80,13 +80,13 @@ export default function Home() {
     setDownloadType(format);
     
     try {
-      // Download the video
-      const response = await fetch('/api/download-video', {
+      // Download the video using our Netlify function
+      const response = await fetch('/.netlify/functions/node-ytdlp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url, format }),
+        body: JSON.stringify({ url, action: 'download', format }),
       });
 
       if (!response.ok) {
@@ -116,7 +116,21 @@ export default function Home() {
       document.body.removeChild(a);
     } catch (error: unknown) {
       console.error('Error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      let errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Make error messages more user-friendly
+      if (errorMessage.includes('command not found')) {
+        errorMessage = 'Server configuration error: Required tools are not available. Please try again later.';
+      } else if (errorMessage.toLowerCase().includes('network') || errorMessage.toLowerCase().includes('fetch')) {
+        errorMessage = 'Network error: Please check your internet connection and try again.';
+      } else if (errorMessage.includes('tiktok')) {
+        errorMessage = 'Error processing TikTok video: Please ensure you have a valid TikTok video URL.';
+      } else if (errorMessage.includes('Failed to download')) {
+        errorMessage = 'Download error: Could not download the video. The video might be private or removed.';
+      } else if (errorMessage.includes('API')) {
+        errorMessage = 'API error: Our video processing service is experiencing issues. Please try again later.';
+      }
+      
       setError(errorMessage);
     } finally {
       setLoading(false);
