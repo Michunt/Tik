@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TikTok Video Downloader
 
-## Getting Started
+A modern web application built with Next.js that allows users to download TikTok videos easily using yt-dlp. The application provides options to download videos with or without watermarks, and also extract audio from TikTok videos.
 
-First, run the development server:
+## Features
 
+- Clean and modern UI
+- Paste URL functionality
+- Multiple download options:
+  - Download video with watermark
+  - Download video without watermark
+  - Download audio only
+- Progress indication
+- Error handling
+
+## Prerequisites
+
+Before running this application, make sure you have the following installed:
+- Node.js (v18 or later)
+- yt-dlp (must be installed and accessible in your system PATH)
+
+### Installing yt-dlp
+
+#### Windows
+1. Download the latest yt-dlp.exe from the [official GitHub releases page](https://github.com/yt-dlp/yt-dlp/releases)
+2. Place the exe file in a directory that's in your PATH (e.g., C:\Windows)
+3. Verify installation by opening Command Prompt or PowerShell and typing:
+   ```
+   yt-dlp --version
+   ```
+
+#### macOS/Linux
+1. Install using pip:
+   ```bash
+   pip install yt-dlp
+   ```
+2. Or using Homebrew (macOS):
+   ```bash
+   brew install yt-dlp
+   ```
+3. Verify installation:
+   ```bash
+   yt-dlp --version
+   ```
+
+## Installation
+
+1. Clone the repository:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone [repository-url]
+cd tiktok-downloader
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies:
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Run the development server:
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-## Learn More
+## Usage
 
-To learn more about Next.js, take a look at the following resources:
+1. Copy a TikTok video URL
+2. Paste it into the input field (or click the clipboard button)
+3. Click "Check URL" to validate the TikTok video
+4. Choose your preferred download option:
+   - Download Video (with watermark)
+   - Download Audio Only
+   - Download Without Watermark
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## How It Works
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This application uses yt-dlp, a powerful command-line tool for downloading videos from various platforms including TikTok. The web interface provides a user-friendly way to interact with yt-dlp.
 
-## Deploy on Vercel
+When you submit a TikTok URL:
+1. The application first validates the URL and retrieves video information
+2. Then it offers download options based on your preference
+3. When you select an option, it uses yt-dlp to download the video in the requested format
+4. The downloaded file is then served to your browser for download
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Tech Stack
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Next.js 14
+- TypeScript
+- Tailwind CSS
+- yt-dlp (for video downloading)
+
+## License
+
+MIT License
